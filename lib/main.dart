@@ -16,15 +16,19 @@ void main() => runApp(const MainApp());
 
 final _log = Logger("MainApp");
 
-Future<WikiResult> fetchWiki() async {
-  String query = 'Weezer';
+Future<WikiResult> fetchWiki(String query) async {
   final response = await http
-      .get(Uri.parse('https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages%7Cpageterms%7cinfo&inprop=url&generator=prefixsearch&redirects=1&formatversion=2&piprop=thumbnail&pithumbsize=200&pilimit=10&wbptterms=description&gpssearch=$query&gpsoffset=0'));
+      .get(Uri.parse('https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages%7Cpageterms%7cinfo&inprop=url&generator=prefixsearch&redirects=1&formatversion=2&piprop=thumbnail&pithumbsize=200&pilimit=10&wbptterms=description&gpssearch=${const HtmlEscape().convert(query)}&gpsoffset=0'));
 
   if (response.statusCode == 200) {
     // If the server did return a 200 OK response,
     // then parse the JSON.
-    return WikiResult.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    try {
+      return WikiResult.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    } catch (e) {
+      _log.fine('error parsing JSON: $e');
+      return const WikiResult(pageId: -1, title: 'Error', description: 'No matching page found');
+    }
   } else {
     // If the server did not return a 200 OK response,
     // then throw an exception.
@@ -53,16 +57,22 @@ class WikiResult {
     String? thumbUri;
     int? thumbWidth, thumbHeight;
 
-    Map<String, dynamic> page = json['query']['pages'][0];
-    int pageid = page['pageid'];
-    String title = page['title'];
-    String description = page['terms']['description'][0];
+    debugPrint(json.toString());
+
+    if (json['query'] == null) {
+      throw const FormatException('No pages found');
+    }
+
+    Map<String, dynamic> page = json['query']['pages'][0] as Map<String, dynamic>;
+    int pageid = page['pageid'] as int;
+    String title = page['title'] as String;
+    String description = page['terms']['description'][0] as String;
 
     if (page.containsKey('thumbnail')) {
-      Map<String, dynamic> thumb = page['thumbnail'];
-      thumbUri = thumb['source'];
-      thumbWidth = thumb['width'];
-      thumbHeight = thumb['height'];
+      Map<String, dynamic> thumb = page['thumbnail'] as Map<String, dynamic>;
+      thumbUri = thumb['source'] as String;
+      thumbWidth = thumb['width'] as int;
+      thumbHeight = thumb['height'] as int;
     }
 
     return WikiResult(
@@ -105,7 +115,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   static const _textStyle = TextStyle(fontSize: 30);
 
   // Wikipedia query results
-  late Future<WikiResult> futureWikiResult;
+  Future<WikiResult>? _futureWikiResult;
 
 
   @override
@@ -114,7 +124,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     currentState = ApplicationState.initializing;
     // asynchronously kick off Vosk initialization
     _initVosk();
-    futureWikiResult = fetchWiki();
   }
 
   @override
@@ -193,7 +202,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         if (mounted) setState(() {});
         return;
       }
-
+/*
       // try to get the Frame into a known state by making sure there's no main loop running
       frame!.sendBreakSignal();
       await Future.delayed(const Duration(milliseconds: 500));
@@ -212,7 +221,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       // kick off the main application loop
       await frame!.sendString('require("frame_app")', awaitResponse: true);
       await Future.delayed(const Duration(milliseconds: 500));
-
+*/
       // -----------------------------------------------------------------------
       // frame_app is installed on Frame and running, start our application loop
       // -----------------------------------------------------------------------
@@ -231,8 +240,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
         // TODO consider enabling alternatives, and word times, and ...?
         String text = resultReady ?
-            jsonDecode(await _recognizer.getResult())['text']
-          : jsonDecode(await _recognizer.getPartialResult())['partial'];
+            jsonDecode(await _recognizer.getResult())['text'] as String
+          : jsonDecode(await _recognizer.getPartialResult())['partial'] as String;
 
         // If the text is the same as the previous one, we don't send it to Frame and force a redraw
         // The recognizer often produces a bunch of empty string in a row too, so this means
@@ -254,7 +263,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           // comes a bit soon and hence the display is cleared a little sooner
           // than they want (not like audio hangs around in the air though
           // after words are spoken!)
-          frame!.sendData([0x0b, 0x20]);
+          //TODO frame!.sendData([0x0b, 0x20]);
           prevText = '';
           continue;
         }
@@ -272,7 +281,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
           int sentBytes = 0;
           int bytesRemaining = wrappedText.length;
-          int chunksize = frame!.maxDataLength! - 1;
+          //TODO int chunksize = frame!.maxDataLength! - 1;
+          int chunksize = 200;
           List<int> bytes;
 
           while (sentBytes < wrappedText.length) {
@@ -286,7 +296,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             }
 
             // send the chunk
-            frame!.sendData(bytes);
+            //TODO frame!.sendData(bytes);
 
             sentBytes += bytes.length;
             bytesRemaining = wrappedText.length - sentBytes;
@@ -300,14 +310,20 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         // update the phone UI too
         setState(() => resultReady ? _finalResult = text : _partialResult = text);
         prevText = text;
+        // recognized our query word, break out of audio and fetch the content
+        if (resultReady) {
+          break;
+        }
       }
+
+      _futureWikiResult = fetchWiki(_finalResult);
 
       // ----------------------------------------------------------------------
       // finished the main application loop, shut it down here and on the Frame
       // ----------------------------------------------------------------------
 
       await stopAudio(audioRecorder!);
-
+/*
       // send a break to stop the Lua app loop on Frame
       await frame!.sendBreakSignal();
       await Future.delayed(const Duration(milliseconds: 500));
@@ -315,7 +331,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       // deregister the data handler
       await frame!.sendString('frame.bluetooth.receive_callback(nil);print(0)', awaitResponse: true);
       await Future.delayed(const Duration(milliseconds: 500));
-
+*/
     } catch (e) {
       _log.fine('Error executing application logic: $e');
     }
@@ -341,7 +357,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     switch (currentState) {
       case ApplicationState.disconnected:
         pfb.add(TextButton(onPressed: scanOrReconnectFrame, child: const Text('Connect Frame')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Start')));
+        pfb.add(TextButton(onPressed: runApplication, child: Text('Start')));
+        pfb.add(TextButton(onPressed: interruptApplication, child: const Text('Stop')));
         pfb.add(const TextButton(onPressed: null, child: Text('Finish')));
         break;
 
@@ -383,24 +400,23 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Align(alignment: Alignment.centerLeft,
-                  child: Text('Partial: $_partialResult', style: _textStyle)
+                  child: Text('Query: ${_partialResult == '' ? _finalResult : _partialResult}', style: _textStyle)
                 ),
                 const Divider(),
                 Align(alignment: Alignment.centerLeft,
-                  child: Text('Final: $_finalResult', style: _textStyle)
-                ),
-                FutureBuilder<WikiResult>(
-                  future: futureWikiResult,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasData) {
-                      return Text(snapshot.data!.title);
-                    } else if (snapshot.hasError) {
-                      return Text('${snapshot.error}');
-                    }
+                  child: FutureBuilder<WikiResult>(
+                    future: _futureWikiResult,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData) {
+                        return Text('Final: ${snapshot.data!.description}', style: _textStyle);
+                      } else if (snapshot.hasError) {
+                        return Text('${snapshot.error}', style: _textStyle);
+                      }
 
-                    // By default, show a loading spinner.
-                    return const CircularProgressIndicator();
-                  },
+                      // By default, show a loading spinner.
+                      return const CircularProgressIndicator();
+                    },
+                  ),
                 ),
               ],
             ),
