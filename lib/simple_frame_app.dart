@@ -28,7 +28,7 @@ mixin SimpleFrameAppState<T extends StatefulWidget> on State<T> {
 
   // Use BrilliantBluetooth for communications with Frame
   BrilliantDevice? frame;
-  StreamSubscription? _scanStream;
+  StreamSubscription<BrilliantScannedDevice>? _scanStream;
   StreamSubscription<BrilliantDevice>? _deviceStateSubs;
   StreamSubscription<List<int>>? _rxAppData;
   StreamSubscription<String>? _rxStdOut;
