@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
-import 'package:buffered_list_stream/buffered_list_stream.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:record/record.dart';
-import 'package:vosk_flutter/vosk_flutter.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'package:http/http.dart' as http;
 
 import 'frame_helper.dart';
@@ -104,11 +102,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   }
 
   /// Wiki Frame application members
-  static const _modelName = 'vosk-model-small-en-us-0.15.zip';
-  final _vosk = VoskFlutterPlugin.instance();
-  late final Model _model;
-  late final Recognizer _recognizer;
-  static const _sampleRate = 16000;
+  final SpeechToText _speechToText = SpeechToText();
+  bool _speechEnabled = false;
 
   String _partialResult = "N/A";
   String _finalResult = "N/A";
@@ -122,72 +117,70 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   void initState() {
     super.initState();
     currentState = ApplicationState.initializing;
-    // asynchronously kick off Vosk initialization
-    _initVosk();
+    // asynchronously kick off Speech-to-text initialization
+    _initSpeech();
   }
 
   @override
   void dispose() async {
-    _model.dispose();
-    _recognizer.dispose();
+    _speechToText.cancel();
     super.dispose();
   }
 
-  void _initVosk() async {
-    final enSmallModelPath = await ModelLoader().loadFromAssets('assets/$_modelName');
-    _model = await _vosk.createModel(enSmallModelPath);
-    _recognizer = await _vosk.createRecognizer(model: _model, sampleRate: _sampleRate);
+  /// This has to happen only once per app
+  void _initSpeech() async {
+    _speechEnabled = await _speechToText.initialize();
+    if (!_speechEnabled) {
+        _log.severe('The user has denied the use of speech recognition');
+      currentState = ApplicationState.disconnected;
+    }
+    else {
+      _log.fine('Speech-to-text initialized');
+      currentState = ApplicationState.ready;
+    }
 
-    currentState = ApplicationState.disconnected;
     if (mounted) setState(() {});
   }
 
-  /// Sets up the Audio used for the application.
-  /// Returns true if the audio is set up correctly, in which case
-  /// it also returns a reference to the AudioRecorder and the
-  /// audioSampleBufferedStream
-  Future<(bool, AudioRecorder?, Stream<List<int>>?)> startAudio() async {
-    // create a fresh AudioRecorder each time we run - it will be dispose()d when we click stop
-    AudioRecorder audioRecorder = AudioRecorder();
-
-    // Check and request permission if needed
-    if (!await audioRecorder.hasPermission()) {
-      return (false, null, null);
-    }
-
-    try {
-      // start the audio stream
-      // TODO select suitable sample rate for the Frame given BLE bandwidth constraints if we want to switch to Frame mic
-      final recordStream = await audioRecorder.startStream(
-        const RecordConfig(encoder: AudioEncoder.pcm16bits,
-          numChannels: 1,
-          sampleRate: _sampleRate));
-
-      // buffer the audio stream into chunks of 4096 samples
-      final audioSampleBufferedStream = bufferedListStream(
-        recordStream.map((event) {
-          return event.toList();
-        }),
-        // samples are PCM16, so 2 bytes per sample
-        4096 * 2,
-      );
-
-      return (true, audioRecorder, audioSampleBufferedStream);
-    } catch (e) {
-      _log.severe('Error starting Audio: $e');
-      return (false, null, null);
-    }
+  /// Each time to start a speech recognition session
+  Future<void> _startListening() async {
+    await _speechToText.listen(onResult: _onSpeechResult, listenOptions: SpeechListenOptions(cancelOnError: true, onDevice: true, listenMode: ListenMode.search));
+    if (mounted) setState(() {});
   }
 
-  Future<void> stopAudio(AudioRecorder recorder) async {
-    // stop the audio
-    await recorder.stop();
-    await recorder.dispose();
+  /// Manually stop the active speech recognition session
+  /// Note that there are also timeouts that each platform enforces
+  /// and the SpeechToText plugin supports setting timeouts on the
+  /// listen method.
+  Future<void> _stopListening() async {
+    await _speechToText.stop();
+    if (mounted) setState(() {});
   }
 
-  /// This application uses vosk speech-to-text to listen to audio from the host mic, convert to text,
-  /// and send the text to the Frame in real-time. It has a running main loop in this function
-  /// and also on the Frame (frame_app.lua)
+  /// This is the callback that the SpeechToText plugin calls when
+  /// the platform returns recognized words.
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      if (result.finalResult) {
+        _finalResult = result.recognizedWords;
+        _partialResult = '';
+        _log.fine('Final result: $_finalResult');
+        _futureWikiResult = fetchWiki(_finalResult);
+        _stopListening();
+
+        currentState = ApplicationState.ready;
+        if (mounted) setState(() {});
+      }
+      else {
+        // partial result
+        _partialResult = result.recognizedWords;
+        _log.fine('Partial result: $_partialResult, ${result.alternates}');
+      }
+    });
+  }
+
+  /// This application uses platform speech-to-text to listen to audio from the host mic, convert to text,
+  /// and send the text to the Frame. It has a running main loop on the Frame (frame_app.lua)
   @override
   Future<void> runApplication() async {
     currentState = ApplicationState.running;
@@ -196,12 +189,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     if (mounted) setState(() {});
 
     try {
-      var (ok, audioRecorder, audioSampleBufferedStream) = await startAudio();
-      if (!ok) {
-        currentState = ApplicationState.ready;
-        if (mounted) setState(() {});
-        return;
-      }
+      // listen for STT
+      await _startListening();
 /*
       // try to get the Frame into a known state by making sure there's no main loop running
       frame!.sendBreakSignal();
@@ -228,8 +217,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
       String prevText = '';
 
-      // loop over the incoming audio data and send reults to Frame
-      await for (var audioSample in audioSampleBufferedStream!) {
+/*
         // if the user has clicked Stop we want to jump out of the main loop and stop processing
         if (currentState != ApplicationState.running) {
           break;
@@ -314,7 +302,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         if (resultReady) {
           break;
         }
-      }
 
       _futureWikiResult = fetchWiki(_finalResult);
 
@@ -322,7 +309,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       // finished the main application loop, shut it down here and on the Frame
       // ----------------------------------------------------------------------
 
-      await stopAudio(audioRecorder!);
+      await _stopListening();
+  */
 /*
       // send a break to stop the Lua app loop on Frame
       await frame!.sendBreakSignal();
@@ -336,8 +324,9 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       _log.fine('Error executing application logic: $e');
     }
 
-    currentState = ApplicationState.ready;
-    if (mounted) setState(() {});
+    //currentState = ApplicationState.ready;
+    //if (mounted) setState(() {});
+    // stays running when it exits, either speech recognized or timeout sends us back to ApplicationState.ready
   }
 
   /// The runApplication function will keep running until we interrupt it here
@@ -357,7 +346,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     switch (currentState) {
       case ApplicationState.disconnected:
         pfb.add(TextButton(onPressed: scanOrReconnectFrame, child: const Text('Connect Frame')));
-        pfb.add(TextButton(onPressed: runApplication, child: Text('Start')));
+        pfb.add(TextButton(onPressed: runApplication, child: const Text('Start')));
         pfb.add(TextButton(onPressed: interruptApplication, child: const Text('Stop')));
         pfb.add(const TextButton(onPressed: null, child: Text('Finish')));
         break;
@@ -408,13 +397,13 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                     future: _futureWikiResult,
                     builder: (context, snapshot) {
                       if (snapshot.hasData) {
-                        return Text('Final: ${snapshot.data!.description}', style: _textStyle);
+                        return Text('${snapshot.data!.title}:\n${snapshot.data!.description}', style: _textStyle);
                       } else if (snapshot.hasError) {
                         return Text('${snapshot.error}', style: _textStyle);
                       }
 
                       // By default, show a loading spinner.
-                      return const CircularProgressIndicator();
+                      return const Text('Make a query!', style: _textStyle);
                     },
                   ),
                 ),
