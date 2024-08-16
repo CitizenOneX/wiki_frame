@@ -133,9 +133,11 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   }
 
   /// This application uses platform speech-to-text to listen to audio from the host mic, convert to text,
-  /// and send the text to the Frame. Each short listen then wiki query is triggered from a floating action button
-  /// so the lifetime of this run() is only 5 seconds or so.
+  /// and send the text to the Frame.
+  /// A Wiki query is also sent, and the resulting content is shown in Frame.
+  /// So the lifetime of this run() is only 5 seconds or so.
   /// It has a running main loop on the Frame (frame_app.lua)
+  @override
   Future<void> run() async {
     currentState = ApplicationState.running;
     _partialResult = '';
@@ -221,7 +223,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   }
 
   /// The run() function will run for 5 seconds or so, but if the user
-  /// interrupts it, we can cancel the speech to text/wiki search and return to ApplicationState.running/_wikiReady state.
+  /// interrupts it, we can cancel the speech to text/wiki search and return to ApplicationState.ready state.
+  @override
   Future<void> cancel() async {
     await _stopListening();
     currentState = ApplicationState.ready;
@@ -230,44 +233,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   @override
   Widget build(BuildContext context) {
-    // work out the states of the footer buttons based on the app state
-    List<Widget> pfb = [];
-
-    switch (currentState) {
-      case ApplicationState.disconnected:
-        pfb.add(TextButton(onPressed: scanOrReconnectFrame, child: const Text('Connect')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Start')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Stop')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Disconnect')));
-        break;
-
-      case ApplicationState.initializing:
-      case ApplicationState.scanning:
-      case ApplicationState.connecting:
-      case ApplicationState.running:
-      case ApplicationState.stopping:
-      case ApplicationState.disconnecting:
-        pfb.add(const TextButton(onPressed: null, child: Text('Connect')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Start')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Stop')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Disconnect')));
-        break;
-
-      case ApplicationState.connected:
-        pfb.add(const TextButton(onPressed: null, child: Text('Connect')));
-        pfb.add(TextButton(onPressed: startApplication, child: const Text('Start')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Stop')));
-        pfb.add(TextButton(onPressed: disconnectFrame, child: const Text('Disconnect')));
-        break;
-
-      case ApplicationState.ready:
-        pfb.add(const TextButton(onPressed: null, child: Text('Connect')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Start')));
-        pfb.add(TextButton(onPressed: stopApplication, child: const Text('Stop')));
-        pfb.add(const TextButton(onPressed: null, child: Text('Disconnect')));
-        break;
-    }
-
     return MaterialApp(
       title: 'Wiki Frame',
       theme: ThemeData.dark(),
@@ -303,10 +268,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             ),
           ),
         ),
-        floatingActionButton: currentState == ApplicationState.ready ?
-          FloatingActionButton(onPressed: run, child: const Icon(Icons.search)) :
-          FloatingActionButton(onPressed: cancel, child: const Icon(Icons.cancel)),
-        persistentFooterButtons: pfb,
+        floatingActionButton: getFloatingActionButtonWidget(const Icon(Icons.search), const Icon(Icons.cancel)),
+        persistentFooterButtons: getFooterButtonsWidget(),
       ),
     );
   }
