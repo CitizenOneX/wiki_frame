@@ -18,7 +18,12 @@ Future<(String?, String?)> findBestPage(String query) async {
     try {
       var json = jsonDecode(response.body) as List<dynamic>;
       _log.fine(json);
-      return (json[1][0] as String, null);
+      if ((json[1] as List).isNotEmpty) {
+        return (json[1][0] as String, null);
+      }
+      else {
+        return (null, 'Wikipedia entry not found: $query');
+      }
 
     } catch (e) {
       _log.fine('error parsing JSON: $e');
