@@ -119,8 +119,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         (result, error) = await fetchExtract(title);
 
         if (result != null) {
-          //_extract = FrameHelper.wrapText(result.extract, 400, 60);
-          _extract = result.extract;
+          _extract = FrameHelper.wrapText(result.extract, 400, 4);
           _finalResult = result.title;
           if (mounted) setState((){});
           // TODO FrameHelper.sendLongString etc result.extract (regex strip non-printable?) to Frame (wrap width = 400?)
@@ -423,16 +422,17 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                       Expanded(
                         flex: 5,
                         child: Container(
+                          alignment: Alignment.topCenter,
                           color: Colors.black,
-                          padding: const EdgeInsets.all(16),
                           child: Text(_extract,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            style: const TextStyle(color: Colors.white, fontSize: 18),
                           ),
                         ),
                       ),
                       Expanded(
                         flex: 3,
                         child: Container(
+                          alignment: Alignment.topCenter,
                           color: Colors.black,
                           child: (_image != null) ? Image.memory(
                             img.encodePng(_image!),
