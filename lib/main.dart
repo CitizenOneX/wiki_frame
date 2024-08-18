@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -36,9 +37,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   bool _speechEnabled = false;
   String _partialResult = "N/A";
   String _finalResult = "N/A";
-
-  // Wikipedia query results
-  Future<WikiResult>? _futureWikiResult;
+  String _extract = '';
+  img.Image? _image;
 
   static const _textStyle = TextStyle(fontSize: 30);
 
@@ -90,10 +90,11 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   /// This is the callback that the SpeechToText plugin calls when
   /// the platform returns recognized words.
-  void _onSpeechResult(SpeechRecognitionResult result) {
+  void _onSpeechResult(SpeechRecognitionResult result) async {
     if (currentState == ApplicationState.ready) {
-      // user has cancelled alredy, don't process result
-      return;
+      // user has cancelled already, don't process result
+      // FIXME reinstate
+      //return;
     }
 
     if (result.finalResult) {
@@ -102,12 +103,58 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       _partialResult = '';
       _log.fine('Final result: $_finalResult');
       _stopListening();
+      // TODO send final query text to Frame line 1, don't await (before we confirm the title)
 
-      // kick off the http request
-      _futureWikiResult = fetchWiki(_finalResult);
+      // kick off the http request sequence
+      String? error;
+      String? title;
+      (title, error) = await findBestPage(_finalResult);
 
-      // TODO also send final query text to Frame
-      // followed by the wiki content once it arrives
+      // TODO send page title to Frame on row 1 (don't await)
+
+      if (title != null) {
+        WikiResult? result;
+        String? error;
+        (result, error) = await fetchExtract(title);
+
+        if (result != null) {
+          //_extract = FrameHelper.wrapText(result.extract, 400, 60);
+          _extract = result.extract;
+          if (mounted) setState((){});
+          // TODO FrameHelper.sendLongString etc result.extract (regex strip non-printable?) to Frame (wrap width = 400?)
+
+          if (result.thumbUri != null) {
+            // first, download the image into an image/image
+            img.Image? thumbnail;
+            (thumbnail, error) = await fetchThumbnail(result.thumbUri!);
+
+            if (thumbnail != null) {
+              // Compute an optimal 15-color palette from the image
+              // TODO try different dithering methods, quantization methods?
+              _image = thumbnail;
+              try {
+                // TODO quantization to 16-color doesn't perform consistently well, use 2-bit for now
+                // for binary quantization, setting numberOfColors=2 results in a single
+                _image = img.quantize(thumbnail, numberOfColors: 4, method: img.QuantizeMethod.binary, dither: img.DitherKernel.floydSteinberg, ditherSerpentine: false);
+                _log.fine('Colors in palette: ${_image!.palette!.numColors} ${_image!.palette!.toUint8List()}');
+                if (_image!.height > 400) {
+                  _image = img.copyCrop(_image!, x: 0, y: 0, width: 240, height: 400);
+                }
+              }
+              catch (e) {
+                _log.severe(e);
+              }
+              if (mounted) setState((){});
+            }
+            else {
+              _log.fine('Error fetching thumbnail for "$_finalResult": "${result.thumbUri!}" - "$error"');
+            }
+          }
+        }
+      }
+      else {
+        _log.fine('Error searching for "$_finalResult" - "$error"');
+      }
 
       currentState = ApplicationState.ready;
       if (mounted) setState(() {});
@@ -116,7 +163,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       // partial result - just display in-progress text
       _partialResult = result.recognizedWords;
       _log.fine('Partial result: $_partialResult, ${result.alternates}');
-      // TODO also send partial query text to Frame
+      if (mounted) setState((){});
+      // TODO also send partial query text to Frame line 1
     }
   }
 
@@ -124,7 +172,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   void _onSpeechError(SpeechRecognitionError error) {
     if (error.errorMsg != 'error_speech_timeout') {
       _log.severe(error.errorMsg);
-      currentState = ApplicationState.connected;
+      currentState = ApplicationState.ready;
     }
     else {
       currentState = ApplicationState.running;
@@ -233,6 +281,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   @override
   Widget build(BuildContext context) {
+    // FIXME remove
+    currentState = ApplicationState.ready;
     return MaterialApp(
       title: 'Wiki Frame',
       theme: ThemeData.dark(),
@@ -252,18 +302,12 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                 ),
                 const Divider(),
                 Align(alignment: Alignment.centerLeft,
-                  child: FutureBuilder<WikiResult>(
-                    future: _futureWikiResult,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData) {
-                        return Text('${snapshot.data!.title}:\n${snapshot.data!.description}', style: _textStyle);
-                      } else if (snapshot.hasError) {
-                        return Text('${snapshot.error}', style: _textStyle);
-                      }
-                      return const Text('Make a query!', style: _textStyle);
-                    },
-                  ),
+                  child: Text('Extract: $_extract'),
                 ),
+                // Align(alignment: Alignment.centerLeft,
+                //   child: _image != null ? Image.memory(_image!.toUint8List()) : null,
+                // ),
+                if (_image != null) Image.memory(img.encodePng(_image!), gaplessPlayback: true,)
               ],
             ),
           ),
