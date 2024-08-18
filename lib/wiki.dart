@@ -35,7 +35,7 @@ Future<(String?, String?)> findBestPage(String query) async {
 /// (WikiResult, null) or (null, errorMessage)
 Future<(WikiResult?, String?)> fetchExtract(String title) async {
   final response = await http
-      .get(Uri.parse('https://en.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&titles=${const HtmlEscape().convert(title)}&exintro=true&exsentences=2&explaintext=true&pithumbsize=240&format=json'));
+      .get(Uri.parse('https://en.wikipedia.org/w/api.php?action=query&redirects&prop=extracts|pageimages&titles=${const HtmlEscape().convert(title)}&exintro=true&exsentences=2&explaintext=true&pithumbsize=240&format=json'));
 
   if (response.statusCode == 200) {
     // If the server did return a 200 OK response, then parse the JSON.
