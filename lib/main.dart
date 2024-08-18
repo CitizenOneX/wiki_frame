@@ -148,27 +148,30 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                 // send image message to Frame (split over several packets)
                 var fullPayload = makeImagePayload(_image!);
 
-                int sentBytes = 0;
-                int bytesRemaining = fullPayload.length;
-                int chunksize = frame!.maxDataLength! - 1;
-                List<int> packet = List.filled(frame!.maxDataLength!, 0x0d);
+                // FIXME remove frame check
+                if (frame != null) {
+                  int sentBytes = 0;
+                  int bytesRemaining = fullPayload.length;
+                  int chunksize = frame!.maxDataLength! - 1;
+                  List<int> packet = List.filled(frame!.maxDataLength!, 0x0d);
 
-                while (sentBytes < fullPayload.length) {
-                  if (bytesRemaining <= chunksize) {
-                    // final image chunk
-                    packet = List.filled(bytesRemaining + 1, 0x0d);
-                    packet.setAll(1, fullPayload.getRange(sentBytes, sentBytes + bytesRemaining));
+                  while (sentBytes < fullPayload.length) {
+                    if (bytesRemaining <= chunksize) {
+                      // final image chunk
+                      packet = List.filled(bytesRemaining + 1, 0x0d);
+                      packet.setAll(1, fullPayload.getRange(sentBytes, sentBytes + bytesRemaining));
+                    }
+                    else {
+                      // non-final chunk
+                      packet.setAll(1, fullPayload.getRange(sentBytes, sentBytes + chunksize));
+                    }
+
+                    // send the chunk
+                    frame!.sendData(packet);
+
+                    sentBytes += packet.length;
+                    bytesRemaining = fullPayload.length - sentBytes;
                   }
-                  else {
-                    // non-final chunk
-                    packet.setAll(1, fullPayload.getRange(sentBytes, sentBytes + chunksize));
-                  }
-
-                  // send the chunk
-                  if (frame!=null) frame!.sendData(packet);
-
-                  sentBytes += packet.length;
-                  bytesRemaining = fullPayload.length - sentBytes;
                 }
               }
               catch (e) {
