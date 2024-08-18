@@ -120,6 +120,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
         if (result != null) {
           //_extract = FrameHelper.wrapText(result.extract, 400, 60);
           _extract = result.extract;
+          _finalResult = result.title;
           if (mounted) setState((){});
           // TODO FrameHelper.sendLongString etc result.extract (regex strip non-printable?) to Frame (wrap width = 400?)
 
@@ -301,13 +302,35 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                   child: Text('Query: ${_partialResult == '' ? _finalResult : _partialResult}', style: _textStyle)
                 ),
                 const Divider(),
-                Align(alignment: Alignment.centerLeft,
-                  child: Text('Extract: $_extract'),
+                Container(
+                  width: 640,
+                  height: 400,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 5,
+                        child: Container(
+                          color: Colors.black,
+                          padding: EdgeInsets.all(16),
+                          child: Text(_extract,
+                            style: TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: Container(
+                          color: Colors.black,
+                          child: (_image != null) ? Image.memory(
+                            img.encodePng(_image!),
+                            gaplessPlayback: true,
+                            fit: BoxFit.cover,
+                          ) : null
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                // Align(alignment: Alignment.centerLeft,
-                //   child: _image != null ? Image.memory(_image!.toUint8List()) : null,
-                // ),
-                if (_image != null) Image.memory(img.encodePng(_image!), gaplessPlayback: true,)
               ],
             ),
           ),
