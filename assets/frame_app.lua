@@ -2,82 +2,98 @@
 -- and wait for the main loop to pick it up for processing/drawing
 -- app_data.text is either the text that will be sent to Wikipedia for querying content
 --               or the response containing the wiki content (possibly split into query/wiki in future)
--- app_data.image_data_table is the thumbnail image associated with the Wikipedia page (if present) as rows of bytes from each message
-local app_data = { text = '', image_width = 0, image_height = 0, image_bpp = 0, image_num_colors = 0, image_palette = '', image_bytes = 0, received_bytes = 0, image_data_table = {} }
--- true while strings should append, false when string is finalized
-local building_text = false
--- true when the data handler is signalling to the main loop that the text/image should be drawn.
--- Main loop sets it back to false when drawn
-local draw_text = false
-local draw_image = false
+-- image.chunk_table is the thumbnail image associated with the Wikipedia page (if present) as rows of bytes from each message
+-- TODO supporting multiple images (or text items) concurrently: either differently-named tables here, or a list
+-- TODO multiple images will likely still need to be drawn with a fixed palette, so it won't be set and stored per image and might need to be reset afterward?
+-- TODO remove initialization of these - only need app_data_raw and app_data initialized to empty tables
+-- This was just for illustration only, but they are actually created lazily
+--local text_raw = { chunk_table = {}, size = 0, recv_bytes = 0 }
+--local image_raw = { chunk_table = {}, size = 0, recv_bytes = 0 }
+--local app_data_raw = { TEXT_FLAG = text_raw, IMAGE_FLAG = image_raw }
+--local text = { data = '' }
+--local image = { data = '', width = 0, height = 0, bpp = 0, num_colors = 0, palette = '' }
+--local app_data = { TEXT_FLAG = text, IMAGE_FLAG = image }
+
 
 -- Frame to phone flags
-BATTERY_LEVEL_FLAG = "\x0c"
+BATTERY_LEVEL_FLAG = 0x0c
+--TODO BATTERY_LEVEL_FLAG = "\x0c"
 
 -- Phone to Frame flags
-NON_FINAL_CHUNK_FLAG = 0x0a
-FINAL_CHUNK_FLAG = 0x0b
-IMAGE_CHUNK_FLAG = 0x0d
+TEXT_FLAG = 0x0a
+IMAGE_FLAG = 0x0d
 
+local app_data_raw = {}
+local app_data = {}
 
--- every time byte data arrives just extract the data payload from the message
--- and save to the local app_data table so the main loop can pick it up and print it
--- format of [data] (a multi-line text string) is:
--- first digit will be 0x0a/0x0b non-final/final chunk of long text (or 0x0d for an image)
--- followed by string bytes out to the mtu
-function data_handler(data)
-    if string.byte(data, 1) == NON_FINAL_CHUNK_FLAG then
-        -- non-final chunk
-        if building_text then
-            app_data.text = app_data.text .. string.sub(data, 2)
-        else
-            -- first chunk of new text
-            building_text = true
-            app_data.text = string.sub(data, 2)
-        end
-    elseif string.byte(data, 1) == FINAL_CHUNK_FLAG then
-        -- final chunk
-        if building_text then
-            -- final chunk of new text
-            app_data.text = app_data.text .. string.sub(data, 2)
-        else
-            -- first and final chunk of new text
-            app_data.text = string.sub(data, 2)
-        end
-        building_text = false
-        draw_text = true
-    elseif string.byte(data, 1) == IMAGE_CHUNK_FLAG then
-        if app_data.image_data_table[1] == nil then
-            -- new image; read the header
-            -- width(Uint16), height(Uint16), bpp(Uint8), numColors(Uint8), palette (Uint8 r, Uint8 g, Uint8 b)*numColors, data (length width x height x bpp/8)
-            app_data.image_width = string.byte(data, 2) << 8 | string.byte(data, 3)
-            app_data.image_height = string.byte(data, 4) << 8 | string.byte(data, 5)
-            app_data.image_bpp = string.byte(data, 6)
-            app_data.image_num_colors = string.byte(data, 7)
-            app_data.image_palette = string.sub(data, 8, 8 + 3*i - 1)
-            app_data.image_bytes = app_data.image_width * app_data.image_height * app_data.image_bpp / 8
+-- Data Handler: called when data arrives, must execute quickly.
+-- Update the app_data_raw item based on the contents of the current packet
+-- The first byte of the packet indicates the message type, and the item's key
+-- If the key is not present, initialise a new app data item
+-- Accumulate chunks of data of the specified type, for later processing
+function update_app_data_raw(data)
+    local item = app_data_raw[string.byte(data, 1)]
+    if item == nil or next(item) == nil then
+        item = { chunk_table = {}, size = 0, recv_bytes = 0 }
+        app_data_raw[string.byte(data, 1)] = item
+    end
 
-            -- read the remaining bytes and update received_bytes
-            table.insert(app_data.image_data_table, string.sub(data, 8 + 3*i))
-            received_bytes = data.length - 9 - 3*i
-        else
-            -- copy the bytes to the image_data_table and update received_bytes
-            table.insert(app_data.image_data_table, string.sub(data, 2))
-            received_bytes = received_bytes + data.length - 1
-        end
-
-        if app_data.received_bytes == app_data.image_bytes then
-            draw_image = true
-        end
+    if #item.chunk_table == 0 then
+        -- first chunk of new data contains size (Uint16)
+        item.size = string.byte(data, 2) << 8 | string.byte(data, 3)
+        item.chunk_table[1] = string.sub(data, 4)
+        item.recv_bytes = string.len(data) - 3
+    else
+        item.chunk_table[#item.chunk_table + 1] = string.sub(data, 2)
+        item.recv_bytes = string.len(data) - 1
     end
 end
 
+-- Works through app_data_raw and if any items are ready, run the corresponding parser
+function process_raw_items()
+    local processed = 0
+
+    for flag, item in pairs(app_data_raw) do
+        if item.size > 0 and item.recv_bytes == item.size then
+            -- parse the app_data_raw item into an app_data item
+            app_data[flag] = parsers[flag](table.concat(item.chunk_table))
+
+            -- then clear out the raw data
+            for k, v in pairs(item.chunk_table) do item.chunk_table[k] = nil end
+            item.size = 0
+            item.recv_bytes = 0
+            processed = processed + 1
+        end
+    end
+
+    return processed
+end
+
+-- Parse the text message raw data. If the message had more structure (layout etc.)
+-- we would parse that out here. In this case the data only contains the string
+function parse_text(data)
+    local text = {}
+    text.data = data
+    return text
+end
+
+-- Parse the image message raw data. Unpack the header fields.
+function parse_image(data)
+    local image = {}
+    image.width = string.byte(data, 4) << 8 | string.byte(data, 5)
+    image.height = string.byte(data, 6) << 8 | string.byte(data, 7)
+    image.bpp = string.byte(data, 8)
+    image.num_colors = string.byte(data, 9)
+    image.palette = string.sub(data, 10, 10 + 3*image.num_colors - 1)
+    image.size = image.width * image.height * image.bpp / 8
+    image.data = string.sub(data, 10 + 3*image.num_colors)
+    return image
+end
+
 -- draw the current text on the display
--- Note: For lower latency for text to first appear, we could draw the wip text as it arrives
--- keeping track of horizontal and vertical offsets to continue drawing subsequent packets
 function print_text()
     local i = 0
-    for line in app_data.text:gmatch("([^\n]*)\n?") do
+    for line in app_data[TEXT_FLAG].data:gmatch("([^\n]*)\n?") do
         if line ~= "" then
             frame.display.text(line, 1, i * 60 + 1)
             i = i + 1
@@ -87,8 +103,10 @@ function print_text()
 end
 
 -- draw the image on the display
+-- TODO set palette
 function print_image()
-    frame.display.bitmap(400, 0, app_data.image_width, 2, 1, string.rep("\xFF", app_data.image_width / 8 * 16)) -- TODO table.concat(app_data.image_data_table))
+    local image = app_data[IMAGE_FLAG]
+    frame.display.bitmap(400, 0, image.width, image.num_colors, 0, image.data)
 end
 
 -- Main app loop
@@ -97,26 +115,31 @@ function app_loop()
     while true do
         rc, err = pcall(
             function()
+                -- process any raw items, if ready (parse into image or text, then clear raw)
+                local items_ready = process_raw_items()
+
+                -- TODO little sleep? (maybe data_handler is even called again, that's okay)
+                frame.sleep(0.02)
+
                 -- only need to print it once when it's ready, it will stay there
-                if draw_text then
-                    print_text()
+                -- but if we print either, then we need to print both because a draw call and show
+                -- will flip the buffer away from the already-drawn text/image
+                if items_ready > 0 then
+                    if (app_data[TEXT_FLAG] ~= nil and app_data[TEXT_FLAG].data ~= nil) then
+                        print_text()
+                    end
+                    if (app_data[IMAGE_FLAG] ~= nil and app_data[IMAGE_FLAG].data ~= nil) then
+                        print_image()
+                    end
                     frame.display.show()
-                    draw_text = false
                 end
 
-                if draw_image then
-                    print_image()
-                    frame.display.show()
-                    draw_image = false
-                    for k, v in pairs(app_data.image_data_table) do app_data.image_data_table[k] = nil end
-                end
-
-                frame.sleep(0.1)
+                frame.sleep(0.02)
 
                 -- periodic battery level updates
                 local t = frame.time.utc()
                 if (last_batt_update == 0 or (t - last_batt_update) > 180) then
-                    pcall(frame.bluetooth.send, BATTERY_LEVEL_FLAG .. string.char(math.floor(frame.battery_level())))
+                    pcall(frame.bluetooth.send, [BATTERY_LEVEL_FLAG] .. string.char(math.floor(frame.battery_level())))
                     last_batt_update = t
                 end
 
@@ -135,8 +158,11 @@ function app_loop()
     end
 end
 
+-- register the respective message parsers
+local parsers = { TEXT_FLAG = parse_text, IMAGE_FLAG = parse_image }
+
 -- register the handler as a callback for all data sent from the host
-frame.bluetooth.receive_callback(data_handler)
+frame.bluetooth.receive_callback(update_app_data_raw)
 
 -- run the main app loop
 app_loop()
