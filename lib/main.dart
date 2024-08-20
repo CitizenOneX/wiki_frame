@@ -128,7 +128,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _log.fine('Final result: $_finalResult');
           _stopListening();
           // send final query text to Frame line 1 (before we confirm the title)
-          await frame?.sendPayload(0x0a, utf8.encode(_finalResult));
+          await frame?.sendMessage(0x0a, utf8.encode(_finalResult));
           prevText = _finalResult;
 
           // kick off the http request sequence
@@ -138,7 +138,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
           if (title != null) {
             // send page title to Frame on row 1
-            await frame?.sendPayload(0x0a, utf8.encode(title));
+            await frame?.sendMessage(0x0a, utf8.encode(title));
             prevText = title;
 
             WikiResult? result;
@@ -150,7 +150,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
               _finalResult = result.title;
               if (mounted) setState((){});
               // send result.extract to Frame ( TODO regex strip non-printable? )
-              await frame?.sendPayload(0x0a, utf8.encode(_extract));
+              await frame?.sendMessage(0x0a, utf8.encode(_extract));
               prevText = result.title;
 
               if (result.thumbUri != null) {
@@ -176,7 +176,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
                     // send image message (header and image data) to Frame (split over several packets)
                     var imagePayload = makeImagePayload(_image!.width, _image!.height, _image!.palette!.numColors, _image!.palette!.toUint8List(), _image!.data!.toUint8List());
-                    frame?.sendPayload(0x0d, imagePayload);
+                    frame?.sendMessage(0x0d, imagePayload);
                   }
                   catch (e) {
                     _log.severe('Error processing image: $e');
@@ -206,7 +206,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _log.fine('Partial result: $_partialResult, ${result.alternates}');
           if (_partialResult != prevText) {
             // send partial result to Frame line 1
-            await frame?.sendPayload(0x0a, utf8.encode(_partialResult));
+            await frame?.sendMessage(0x0a, utf8.encode(_partialResult));
           }
         }
 

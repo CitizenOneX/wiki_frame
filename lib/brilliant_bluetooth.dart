@@ -208,10 +208,11 @@ class BrilliantDevice {
     }
   }
 
-  /// Sends a series of messages to Frame as chunks marked by [0x01 (dataFlag), messageFlag & 0xFF, {first packet: length(Uint16)}, payload(chunked)]
-  /// until all data in the payload is sent. Data cannot exceed 65536 bytes in length.
+  /// Sends a typed message as a series of messages to Frame as chunks marked by
+  /// [0x01 (dataFlag), messageFlag & 0xFF, {first packet: length(Uint16)}, payload(chunked)]
+  /// until all data in the payload is sent. Payload data cannot exceed 65536 bytes in length.
   /// Can be received by a corresponding Lua function on Frame.
-  Future<void> sendPayload(int messageFlag, List<int> payload) async {
+  Future<void> sendMessage(int messageFlag, List<int> payload) async {
     if (payload.length > 65536) {
       return Future.error(const BrilliantBluetoothException('Payload length exceeds 65536 bytes'));
     }
