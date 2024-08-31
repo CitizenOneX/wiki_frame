@@ -39,6 +39,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   bool _speechEnabled = false;
   String _partialResult = "N/A";
   String _finalResult = "N/A";
+  String? _prevText;
 
   // Wiki members
   String _extract = '';
@@ -101,7 +102,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
   /// A Wiki query is also sent, and the resulting content is shown in Frame.
   /// So the lifetime of this run() is only 5 seconds or so.
   /// It has a running main loop on the Frame (frame_app.lua)
-  /// FIXME turn all frame? into frame! when Frame is working again
   @override
   Future<void> run() async {
     currentState = ApplicationState.running;
@@ -115,11 +115,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       onResult: (SpeechRecognitionResult result) async {
         if (currentState == ApplicationState.ready) {
           // user has cancelled already, don't process result
-          // FIXME reinstate
-          //return;
+          return;
         }
-
-        String prevText = '';
 
         if (result.finalResult) {
           // on a final result we fetch the wiki content
@@ -128,8 +125,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _log.fine('Final result: $_finalResult');
           _stopListening();
           // send final query text to Frame line 1 (before we confirm the title)
-          await frame?.sendMessage(0x0a, utf8.encode(_finalResult));
-          prevText = _finalResult;
+          if (_finalResult != _prevText) {
+            await frame!.sendMessage(0x0a, utf8.encode(_finalResult));
+            _prevText = _finalResult;
+          }
 
           // kick off the http request sequence
           String? error;
@@ -138,8 +137,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
           if (title != null) {
             // send page title to Frame on row 1
-            await frame?.sendMessage(0x0a, utf8.encode(title));
-            prevText = title;
+            if (title != _prevText) {
+              await frame!.sendMessage(0x0a, utf8.encode(title));
+              _prevText = title;
+            }
 
             WikiResult? result;
             String? error;
@@ -150,8 +151,8 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
               _finalResult = result.title;
               if (mounted) setState((){});
               // send result.extract to Frame ( TODO regex strip non-printable? )
-              await frame?.sendMessage(0x0a, utf8.encode(_extract));
-              prevText = result.title;
+              await frame!.sendMessage(0x0a, utf8.encode(_extract));
+              _prevText = _extract;
 
               if (result.thumbUri != null) {
                 // first, download the image into an image/image
@@ -176,7 +177,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
                     // send image message (header and image data) to Frame (split over several packets)
                     var imagePayload = makeImagePayload(_image!.width, _image!.height, _image!.palette!.numColors, _image!.palette!.toUint8List(), _image!.data!.toUint8List());
-                    frame?.sendMessage(0x0d, imagePayload);
+                    await frame!.sendMessage(0x0d, imagePayload);
                   }
                   catch (e) {
                     _log.severe('Error processing image: $e');
@@ -197,6 +198,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             _extract = error!;
             _image = null;
           }
+
+          // final result is done
+          currentState = ApplicationState.ready;
+          if (mounted) setState(() {});
         }
         else {
           // partial result - just display in-progress text
@@ -204,14 +209,12 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           if (mounted) setState((){});
 
           _log.fine('Partial result: $_partialResult, ${result.alternates}');
-          if (_partialResult != prevText) {
+          if (_partialResult != _prevText) {
             // send partial result to Frame line 1
-            await frame?.sendMessage(0x0a, utf8.encode(_partialResult));
+            await frame!.sendMessage(0x0a, utf8.encode(_partialResult));
+            _prevText = _partialResult;
           }
         }
-
-        currentState = ApplicationState.ready;
-        if (mounted) setState(() {});
       },
     );
   }
@@ -227,8 +230,6 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   @override
   Widget build(BuildContext context) {
-    // FIXME remove
-    currentState = ApplicationState.ready;
     return MaterialApp(
       title: 'Wiki Frame',
       theme: ThemeData.dark(),
