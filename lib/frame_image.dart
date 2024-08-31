@@ -27,8 +27,11 @@ List<int> makeImagePayload(int width, int height, int numColors, Uint8List palet
   }
 
   // preallocate the list of bytes to send - header, palette, data
-  List<int> payload = List.filled((6 + numColors * 3 + width * height * bpp/8).toInt(), 0);
+  // (packed.length already adds the extra byte if WxH is not divisible by 8)
+  List<int> payload = List.filled(6 + numColors * 3 + packed.length, 0);
 
+  // NB: palette data could be numColors=12 x 3 (RGB) bytes even if bpp is 4 (max 16 colors)
+  // hence we provide both numColors and bpp here
   payload.setAll(0, [widthMsb, widthLsb, heightMsb, heightLsb, bpp, numColors]);
   payload.setAll(6, paletteData);
   payload.setAll(6 + numColors * 3, packed);
