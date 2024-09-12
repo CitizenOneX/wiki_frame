@@ -7,10 +7,10 @@ import 'package:logging/logging.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:simple_frame_app/frame_helper.dart';
+import 'package:simple_frame_app/simple_frame_app.dart';
 
-import 'frame_helper.dart';
 import 'frame_image.dart';
-import 'simple_frame_app.dart';
 import 'wiki.dart';
 
 void main() => runApp(const MainApp());
@@ -176,6 +176,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                     }
 
                     // send image message (header and image data) to Frame (split over several packets)
+                    // TODO use Sprite() instead
                     var imagePayload = makeImagePayload(_image!.width, _image!.height, _image!.palette!.numColors, _image!.palette!.toUint8List(), _image!.data!.toUint8List());
                     await frame!.sendMessage(0x0d, imagePayload);
                   }
