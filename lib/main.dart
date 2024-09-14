@@ -1,16 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
+import 'package:simple_frame_app/frame_helper.dart';
+import 'package:simple_frame_app/simple_frame_app.dart';
+import 'package:simple_frame_app/tx/sprite.dart';
+import 'package:simple_frame_app/tx/text.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
-import 'package:simple_frame_app/frame_helper.dart';
-import 'package:simple_frame_app/simple_frame_app.dart';
 
-import 'frame_image.dart';
 import 'wiki.dart';
 
 void main() => runApp(const MainApp());
@@ -126,7 +126,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _stopListening();
           // send final query text to Frame line 1 (before we confirm the title)
           if (_finalResult != _prevText) {
-            await frame!.sendMessage(0x0a, utf8.encode(_finalResult));
+            await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: _finalResult));
             _prevText = _finalResult;
           }
 
@@ -138,7 +138,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           if (title != null) {
             // send page title to Frame on row 1
             if (title != _prevText) {
-              await frame!.sendMessage(0x0a, utf8.encode(title));
+              await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: title));
               _prevText = title;
             }
 
@@ -151,7 +151,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
               _finalResult = result.title;
               if (mounted) setState((){});
               // send result.extract to Frame ( TODO regex strip non-printable? )
-              await frame!.sendMessage(0x0a, utf8.encode(_extract));
+              await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: _extract));
               _prevText = _extract;
 
               if (result.thumbUri != null) {
@@ -175,10 +175,14 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                       _image = img.copyCrop(_image!, x: 0, y: 0, width: 240, height: 400);
                     }
 
-                    // send image message (header and image data) to Frame (split over several packets)
-                    // TODO use Sprite() instead
-                    var imagePayload = makeImagePayload(_image!.width, _image!.height, _image!.palette!.numColors, _image!.palette!.toUint8List(), _image!.data!.toUint8List());
-                    await frame!.sendMessage(0x0d, imagePayload);
+                    // send image message (header and image data) to Frame
+                    await frame!.sendMessage(TxSprite(
+                      msgCode: 0x0d,
+                      width: _image!.width,
+                      height: _image!.height,
+                      numColors: _image!.palette!.numColors,
+                      paletteData: _image!.palette!.toUint8List(),
+                      pixelData: _image!.data!.toUint8List()));
                   }
                   catch (e) {
                     _log.severe('Error processing image: $e');
@@ -212,7 +216,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _log.fine('Partial result: $_partialResult, ${result.alternates}');
           if (_partialResult != _prevText) {
             // send partial result to Frame line 1
-            await frame!.sendMessage(0x0a, utf8.encode(_partialResult));
+            await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: _partialResult));
             _prevText = _partialResult;
           }
         }
