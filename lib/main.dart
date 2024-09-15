@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
-import 'package:simple_frame_app/frame_helper.dart';
+import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
 import 'package:simple_frame_app/tx/sprite.dart';
 import 'package:simple_frame_app/tx/text.dart';
@@ -147,7 +147,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             (result, error) = await fetchExtract(title);
 
             if (result != null) {
-              _extract = FrameHelper.wrapText('${result.title}\n${result.extract}', 400, 4);
+              _extract = TextUtils.wrapText('${result.title}\n${result.extract}', 400, 4);
               _finalResult = result.title;
               if (mounted) setState((){});
               // send result.extract to Frame ( TODO regex strip non-printable? )
