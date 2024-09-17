@@ -13,8 +13,7 @@ dependencies:
   image: ^4.2.0
   logging: ^1.2.0
   speech_to_text: ^6.6.2
-  simple_frame_app:
-    git: https://github.com/CitizenOneX/simple_frame_app.git
+  simple_frame_app: ^0.0.3
 
 dev_dependencies:
   flutter_test:
@@ -24,5 +23,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - packages/simple_frame_app/lua/battery.min.lua
+    - packages/simple_frame_app/lua/data.min.lua
+    - packages/simple_frame_app/lua/sprite.min.lua
     - assets/frame_app.lua
     - assets/frame_app.min.lua
