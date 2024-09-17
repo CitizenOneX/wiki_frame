@@ -1,27 +1,20 @@
 local data = require('data.min')
 local battery = require('battery.min')
 local sprite = require('sprite.min')
+local text = require('text.min')
 
 -- Phone to Frame flags
 TEXT_FLAG = 0x0a
 IMAGE_FLAG = 0x0d
 
--- Parse the text message raw data. If the message had more structure (layout etc.)
--- we would parse that out here. In this case the data only contains the string
-function parse_text(data)
-    local text = {}
-    text.data = data
-    return text
-end
-
 -- register the message parsers so they are automatically called when matching data comes in
+data.parsers[TEXT_FLAG] = text.parse_text
 data.parsers[IMAGE_FLAG] = sprite.parse_sprite
-data.parsers[TEXT_FLAG] = parse_text
 
 -- draw the current text on the display
 function print_text()
     local i = 0
-    for line in data.app_data[TEXT_FLAG].data:gmatch("([^\n]*)\n?") do
+    for line in data.app_data[TEXT_FLAG].string:gmatch("([^\n]*)\n?") do
         if line ~= "" then
             frame.display.text(line, 1, i * 60 + 1)
             i = i + 1
@@ -53,7 +46,7 @@ function app_loop()
                 -- but if we print either, then we need to print both because a draw call and show
                 -- will flip the buffer away from the already-drawn text/image
                 if items_ready > 0 then
-                    if (data.app_data[TEXT_FLAG] ~= nil and data.app_data[TEXT_FLAG].data ~= nil) then
+                    if (data.app_data[TEXT_FLAG] ~= nil and data.app_data[TEXT_FLAG].string ~= nil) then
                         print_text()
                     end
                     if (data.app_data[IMAGE_FLAG] ~= nil and data.app_data[IMAGE_FLAG].pixel_data ~= nil) then
