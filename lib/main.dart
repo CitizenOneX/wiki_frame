@@ -6,7 +6,7 @@ import 'package:logging/logging.dart';
 import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
 import 'package:simple_frame_app/tx/sprite.dart';
-import 'package:simple_frame_app/tx/text.dart';
+import 'package:simple_frame_app/tx/plain_text.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
