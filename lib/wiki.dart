@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
 
 final _log = Logger("Wiki");
@@ -59,21 +59,13 @@ Future<(WikiResult?, String?)> fetchExtract(String title) async {
   }
 }
 
-/// Fetches the specified thumbnail as an image/image
-/// (image, null) or (null, errorMessage)
-Future<(img.Image?, String?)> fetchThumbnail(String uri) async {
+/// Fetches the specified thumbnail as an Uint8List of image file data
+/// (Uint8List, null) or (null, errorMessage)
+Future<(Uint8List?, String?)> fetchThumbnail(String uri) async {
   final response = await http.get(Uri.parse(uri));
 
   if (response.statusCode == 200) {
-    // TODO check if image type is always the same, then provide decoder hint
-    final image = img.decodeImage(response.bodyBytes);
-
-    // Ensure the image is loaded correctly
-    if (image == null) {
-      return (null, 'Error: Unable to decode image.');
-    }
-
-    return (image, null);
+    return (response.bodyBytes, null);
   }
   else {
     return (null, 'Failed to load image. Status code: ${response.statusCode}');

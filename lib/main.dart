@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
 import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
+import 'package:simple_frame_app/tx/image_sprite_block.dart';
 import 'package:simple_frame_app/tx/sprite.dart';
 import 'package:simple_frame_app/tx/plain_text.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
@@ -43,7 +45,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
   // Wiki members
   String _extract = '';
-  img.Image? _image;
+  Image? _image;
 
   static const _textStyle = TextStyle(fontSize: 30);
 
@@ -147,7 +149,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             (result, error) = await fetchExtract(title);
 
             if (result != null) {
-              _extract = TextUtils.wrapText('${result.title}\n${result.extract}', 400, 4);
+              _extract = TextUtils.wrapText('${result.title}\n${result.extract}', 400, 4).join('\n');
               _finalResult = result.title;
               if (mounted) setState((){});
               // send result.extract to Frame ( TODO regex strip non-printable? )
@@ -156,33 +158,40 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
 
               if (result.thumbUri != null) {
                 // first, download the image into an image/image
-                img.Image? thumbnail;
-                (thumbnail, error) = await fetchThumbnail(result.thumbUri!);
+                Uint8List? imageBytes;
+                (imageBytes, error) = await fetchThumbnail(result.thumbUri!);
 
-                if (thumbnail != null) {
-                  // Compute an optimal 15/16-color palette from the image? Monochrome?
-                  // TODO try different dithering methods, quantization methods?
-                  _image = thumbnail;
+                if (imageBytes != null) {
                   try {
-                    // Quantization to 16-color doesn't perform consistently well, use 2-bit for now
-                    // for binary quantization, setting numberOfColors=2 results in a 1 color(!) image in some cases
-                    // so ask for 4 and get back 2 anyway
-                    _image = img.quantize(thumbnail, numberOfColors: 4, method: img.QuantizeMethod.binary, dither: img.DitherKernel.floydSteinberg, ditherSerpentine: false);
-                    _log.fine('Colors in palette: ${_image!.palette!.numColors} ${_image!.palette!.toUint8List()}');
+                    // Update the UI based on the original image
+                    setState(() {
+                      _image = Image.memory(imageBytes!, gaplessPlayback: true, fit: BoxFit.cover);
+                    });
 
-                    // just in case the image height is longer than 400, crop it here (width should be set at 240 by wikipedia)
-                    if (_image!.height > 400) {
-                      _image = img.copyCrop(_image!, x: 0, y: 0, width: 240, height: 400);
-                    }
+                    // yield here a moment in order to show the first image first
+                    await Future.delayed(const Duration(milliseconds: 10));
 
-                    // send image message (header and image data) to Frame
-                    await frame!.sendMessage(TxSprite(
+                    var sprite = TxSprite.fromImageBytes(msgCode: 0x0d, imageBytes: imageBytes);
+
+                    // Update the UI with the modified image
+                    setState(() {
+                      _image = Image.memory(img.encodePng(sprite.toImage()), gaplessPlayback: true, fit: BoxFit.cover);
+                    });
+
+                    // create the image sprite block header and its sprite lines
+                    // based on the sprite
+                    TxImageSpriteBlock isb = TxImageSpriteBlock(
                       msgCode: 0x0d,
-                      width: _image!.width,
-                      height: _image!.height,
-                      numColors: _image!.palette!.numColors,
-                      paletteData: _image!.palette!.toUint8List(),
-                      pixelData: _image!.data!.toUint8List()));
+                      image: sprite,
+                      spriteLineHeight: 20,
+                      progressiveRender: true);
+
+                    // and send the block header then the sprite lines to Frame
+                    await frame!.sendMessage(isb);
+
+                    for (var sprite in isb.spriteLines) {
+                      await frame!.sendMessage(sprite);
+                    }
                   }
                   catch (e) {
                     _log.severe('Error processing image: $e');
@@ -273,11 +282,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                         child: Container(
                           alignment: Alignment.topCenter,
                           color: Colors.black,
-                          child: (_image != null) ? Image.memory(
-                            img.encodePng(_image!),
-                            gaplessPlayback: true,
-                            fit: BoxFit.cover,
-                          ) : null
+                          child: (_image != null) ? _image! : null
                         ),
                       ),
                     ],
