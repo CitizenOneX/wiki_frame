@@ -16,11 +16,14 @@ Thumbnails are presently quantized to 4-bit (16 colors) and dithered using the [
 ![Frameshot2](docs/frameshot2.jpg)
 ![Frameshot3](docs/frameshot3.jpg)
 
-### Screenshots
-![Screenshot1](docs/screenshot1.png)
-
 ### Framecast
 
+https://github.com/user-attachments/assets/4a376e02-7350-43e5-9e96-b1d62d0912fd
+
+https://github.com/user-attachments/assets/6e0a189c-0ad4-4f41-be7d-321ae313c6d3
+
+### Screenshots
+![Screenshot1](docs/screenshot1.png)
 
 ### Architecture
 ![Architecture](docs/Frame%20App%20Architecture%20-%20Wikipedia%20Search.svg)
