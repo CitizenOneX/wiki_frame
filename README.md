@@ -9,14 +9,18 @@ Alternatives that can be fed streamed audio bytes include Vosk, but that is Andr
 
 Times out after 5s on my Android device (`speech_to_text` allows different timeouts to be requested.)
 
-Thumbnails are presently quantized to 1-bit (black and white) and dithered, partly to reduce image memory requirement, bluetooth transmission time, and partly because dithering full color images to 15 or 16 colors to match Frame's requirement resulted in pretty patchy results using the [Dart image package](https://pub.dev/packages/image).
+Thumbnails are presently quantized to 4-bit (16 colors) and dithered using the [Dart image package](https://pub.dev/packages/image) and displayed progressively.
 
 ### Frameshots
 ![Frameshot1](docs/frameshot1.jpg)
 ![Frameshot2](docs/frameshot2.jpg)
+![Frameshot3](docs/frameshot3.jpg)
 
 ### Screenshots
 ![Screenshot1](docs/screenshot1.png)
+
+### Framecast
+
 
 ### Architecture
 ![Architecture](docs/Frame%20App%20Architecture%20-%20Wikipedia%20Search.svg)
