@@ -1,15 +1,25 @@
 local data = require('data.min')
 local battery = require('battery.min')
+local code = require('code.min')
 local image_sprite_block = require('image_sprite_block.min')
 local plain_text = require('plain_text.min')
 
 -- Phone to Frame flags
 TEXT_FLAG = 0x0a
 IMAGE_SPRITE_BLOCK = 0x0d
+TAP_SUBS_MSG = 0x10
 
 -- register the message parsers so they are automatically called when matching data comes in
 data.parsers[TEXT_FLAG] = plain_text.parse_plain_text
 data.parsers[IMAGE_SPRITE_BLOCK] = image_sprite_block.parse_image_sprite_block
+data.parsers[TAP_SUBS_MSG] = code.parse_code
+
+-- Frame to Phone flags
+TAP_MSG = 0x09
+
+function handle_tap()
+	pcall(frame.bluetooth.send, string.char(TAP_MSG))
+end
 
 -- draw the current text on the display
 function print_text()
@@ -72,6 +82,20 @@ function app_loop()
                             end
                         end
                     end
+
+                    if (data.app_data[TAP_SUBS_MSG] ~= nil) then
+
+                        if data.app_data[TAP_SUBS_MSG].value == 1 then
+                            -- start subscription to tap events
+                            frame.imu.tap_callback(handle_tap)
+                        else
+                            -- cancel subscription to tap events
+                            frame.imu.tap_callback(nil)
+                        end
+
+                        data.app_data[TAP_SUBS_MSG] = nil
+                    end
+
 
                     frame.display.show()
                 end
