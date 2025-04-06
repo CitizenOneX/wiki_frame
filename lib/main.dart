@@ -5,13 +5,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:logging/logging.dart';
-import 'package:simple_frame_app/rx/tap.dart';
+import 'package:frame_msg/rx/tap.dart';
 import 'package:simple_frame_app/text_utils.dart';
 import 'package:simple_frame_app/simple_frame_app.dart';
-import 'package:simple_frame_app/tx/code.dart';
-import 'package:simple_frame_app/tx/image_sprite_block.dart';
-import 'package:simple_frame_app/tx/sprite.dart';
-import 'package:simple_frame_app/tx/plain_text.dart';
+import 'package:frame_msg/tx/code.dart';
+import 'package:frame_msg/tx/image_sprite_block.dart';
+import 'package:frame_msg/tx/sprite.dart';
+import 'package:frame_msg/tx/plain_text.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -126,7 +126,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             // next
             if (_extract != null) {
               if (nextPage()) {
-                await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: getCurrentPageText()));
+                await frame!.sendMessage(0x0a, TxPlainText(text: getCurrentPageText()).pack());
                 setState((){});
               }
             }
@@ -135,7 +135,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
             // prev
             if (_extract != null) {
               if (previousPage()) {
-                await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: getCurrentPageText()));
+                await frame!.sendMessage(0x0a, TxPlainText(text: getCurrentPageText()).pack());
                 setState((){});
               }
             }
@@ -157,10 +157,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     );
 
     // let Frame know to subscribe for taps and send them to us
-    await frame!.sendMessage(TxCode(msgCode: 0x10, value: 1));
+    await frame!.sendMessage(0x10, TxCode(value: 1).pack());
 
     // prompt the user to begin tapping
-    await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: '3-Tap for new query\n____\n1-Tap next page\n2-Tap previous page'));
+    await frame!.sendMessage(0x0a, TxPlainText(text: '3-Tap for new query\n____\n1-Tap next page\n2-Tap previous page').pack());
   }
 
   /// The run() function will run for 5 seconds or so, but if the user
@@ -171,10 +171,10 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
     await _stopListening();
 
     // let Frame know to stop sending taps
-    await frame!.sendMessage(TxCode(msgCode: 0x10, value: 0));
+    await frame!.sendMessage(0x10, TxCode(value: 0).pack());
 
     // clear the display
-    await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: ' '));
+    await frame!.sendMessage(0x0a, TxPlainText(text: ' ').pack());
 
     currentState = ApplicationState.ready;
     if (mounted) setState(() {});
@@ -194,7 +194,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       _stopListening();
       // send final query text to Frame line 1 (before we confirm the title)
       if (_finalResult != _prevText) {
-        await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: _finalResult));
+        await frame!.sendMessage(0x0a, TxPlainText(text: _finalResult).pack());
         _prevText = _finalResult;
       }
 
@@ -206,7 +206,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       if (title != null) {
         // send page title to Frame on row 1
         if (title != _prevText) {
-          await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: title));
+          await frame!.sendMessage(0x0a, TxPlainText(text: title).pack());
           _prevText = title;
         }
 
@@ -220,7 +220,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
           _finalResult = result.title;
           if (mounted) setState((){});
           // send first 5 rows of result.extract to Frame ( TODO regex strip non-printable? )
-          await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: getCurrentPageText()));
+          await frame!.sendMessage(0x0a, TxPlainText(text: getCurrentPageText()).pack());
           _prevText = '';
 
           if (result.thumbUri != null) {
@@ -238,7 +238,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                 // yield here a moment in order to show the first image first
                 await Future.delayed(const Duration(milliseconds: 10));
 
-                var sprite = TxSprite.fromImageBytes(msgCode: 0x0d, imageBytes: imageBytes);
+                var sprite = TxSprite.fromImageBytes(imageBytes: imageBytes);
 
                 // Update the UI with the modified image
                 setState(() {
@@ -248,16 +248,15 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
                 // create the image sprite block header and its sprite lines
                 // based on the sprite
                 TxImageSpriteBlock isb = TxImageSpriteBlock(
-                  msgCode: 0x0d,
                   image: sprite,
                   spriteLineHeight: 20,
                   progressiveRender: true);
 
                 // and send the block header then the sprite lines to Frame
-                await frame!.sendMessage(isb);
+                await frame!.sendMessage(0x0d, isb.pack());
 
                 for (var sprite in isb.spriteLines) {
-                  await frame!.sendMessage(sprite);
+                  await frame!.sendMessage(0x0d, sprite.pack());
                 }
               }
               catch (e) {
@@ -277,7 +276,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       else {
         _log.fine('Error searching for "$_finalResult" - "$error"');
         _extract = [];
-        await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: TextUtils.wrapText(error!, 400, 4).join('\n')));
+        await frame!.sendMessage(0x0a, TxPlainText(text: TextUtils.wrapText(error!, 400, 4).join('\n')).pack());
         _image = null;
         setState((){});
       }
@@ -293,7 +292,7 @@ class MainAppState extends State<MainApp> with SimpleFrameAppState {
       _log.fine('Partial result: $_partialResult, ${result.alternates}');
       if (_partialResult != _prevText) {
         // send partial result to Frame line 1
-        await frame!.sendMessage(TxPlainText(msgCode: 0x0a, text: _partialResult));
+        await frame!.sendMessage(0x0a, TxPlainText(text: _partialResult).pack());
         _prevText = _partialResult;
       }
     }
